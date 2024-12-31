@@ -1,0 +1,9 @@
+[package]
+name = "byre"
+version = "0.0.1"
+edition = "2021"
+authors = ["Benjamin Halsted", "Benjamin Halsted <bhalsted@gmail.com>"]
+description = "A set of libs for quickly bootstrapping a project"
+license = "MIT"
+
+[dependencies]
