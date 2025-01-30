@@ -7,7 +7,7 @@ use opentelemetry_sdk::logs::{LogError, LoggerProvider};
 use opentelemetry_sdk::metrics::{MetricError, PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::runtime::TokioCurrentThread;
 use opentelemetry_sdk::{trace as sdktrace, Resource};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use snafu::{ResultExt as _, Snafu};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
@@ -26,13 +26,13 @@ pub enum Error {
     InitTraceError { source: TraceError },
 }
 
-#[derive(Deserialize, Document)]
+#[derive(Default, Serialize, Deserialize, Document)]
 pub struct MetricSettings {
     #[doku(example = "http://localhost:4318/v1/metrics")]
     pub endpoint: Option<String>,
 }
 
-#[derive(Deserialize, Document)]
+#[derive(Default, Serialize, Deserialize, Document)]
 pub struct LogSettings {
     #[doku(example = "debug,yourcrate=trace")]
     pub console_level: String,
@@ -41,12 +41,12 @@ pub struct LogSettings {
     #[doku(example = "http://localhost:4317")]
     pub endpoint: Option<String>,
 }
-#[derive(Deserialize, Document)]
+#[derive(Default, Serialize, Deserialize, Document)]
 pub struct TraceSettings {
     #[doku(example = "http://localhost:4317")]
     pub endpoint: Option<String>,
 }
-#[derive(Deserialize, Document)]
+#[derive(Default, Serialize, Deserialize, Document)]
 pub struct TelemetrySettings {
     pub trace: TraceSettings,
     pub log: LogSettings,
@@ -204,10 +204,7 @@ fn init_logs(
     Ok(logger_provider)
 }
 
-pub fn init(
-    service_info: &ServiceInfo,
-    settings: &TelemetrySettings,
-) -> Result<Telemetry, Error> {
+pub fn init(service_info: &ServiceInfo, settings: &TelemetrySettings) -> Result<Telemetry, Error> {
     let logger_provider =
         init_logs(service_info, &settings.log).with_context(|_| InitLogSnafu {})?;
 
