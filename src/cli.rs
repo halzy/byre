@@ -85,7 +85,7 @@ where
                 eprintln!("There was an error parsing arg matches!");
                 // Since this is more of a development-time error, we aren't doing as fancy of a quit
                 // as `get_matches`
-                e.exit()
+                e.exit();
             }
         };
 
