@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2025-01-31
+
+### 🚀 Features
+
+- Initial Cli & Telemetry
+
+### 🐛 Bug Fixes
+
+- Adding a semicolon to the exit() call
+- Removed unused import
+
+### 💼 Other
+
+- Added a full example
+
+### 📚 Documentation
+
+- Added documentation!
+
+### ⚙️ Miscellaneous Tasks
+
+- Updating version to 0.2.0
+
 ## [unreleased]
 
 ### 🚀 Features
