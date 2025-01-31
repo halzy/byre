@@ -108,6 +108,7 @@ pub struct TelemetrySettings {
 }
 
 /// Telemetry initializes tracing, metrics, and logging.
+#[derive(Debug)]
 pub struct Telemetry {
     meter_provider: Option<SdkMeterProvider>,
     tracer_provider: Option<sdktrace::TracerProvider>,
