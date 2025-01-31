@@ -1,3 +1,5 @@
+//! Tracing, metrics, logging related tools.
+
 use doku::Document;
 use opentelemetry::trace::TraceError;
 use opentelemetry::{global, KeyValue};
@@ -14,45 +16,98 @@ use tracing_subscriber::EnvFilter;
 
 use crate::ServiceInfo;
 
+/// Errors initializing telemetry
 #[derive(Debug, Snafu)]
 pub enum Error {
+    /// Could not initialize the logger
     #[snafu(display("Could not initialize logging: {source}"))]
-    InitLogError { source: LogError },
+    InitLogError {
+        /// The error from initializing the gRPC connection
+        source: LogError,
+    },
 
+    /// Could not initialize metrics
     #[snafu(display("Could not initialize metrics: {source}"))]
-    InitMetricError { source: MetricError },
+    InitMetricError {
+        /// The error from initializing the gRPC connection
+        source: MetricError,
+    },
 
+    /// Could not initialize tracing
     #[snafu(display("Could not initialize tracing: {source}"))]
-    InitTraceError { source: TraceError },
+    InitTraceError {
+        /// The error from initializing the gRPC connection
+        source: TraceError,
+    },
 }
 
+/// Settings for Metrics
 #[derive(Default, Serialize, Deserialize, Document)]
 pub struct MetricSettings {
+    /// gRPC endpoint to send metrics to. Omit to disable opentelemetry metrics.
     #[doku(example = "http://localhost:4318/v1/metrics")]
     pub endpoint: Option<String>,
 }
 
+/// Settings for Logging
 #[derive(Default, Serialize, Deserialize, Document)]
 pub struct LogSettings {
+    /// log level used when filtering console logs. Uses env-logger style syntax. Set to "off" to disable console logging.
     #[doku(example = "debug,yourcrate=trace")]
     pub console_level: String,
+
+    /// log level used when filtering opentelemetry logs. Uses env-logger style syntax.
     #[doku(example = "warn,yourcrate=debug")]
     pub otel_level: String,
+
+    /// gRPC endpoint to send the opentelemetry logs. Omit to disable opentelemetry logs, will not disable console logs.
     #[doku(example = "http://localhost:4317")]
     pub endpoint: Option<String>,
 }
+
+/// Settings for opentelemetry traces
 #[derive(Default, Serialize, Deserialize, Document)]
 pub struct TraceSettings {
+    /// gRPC endpoint to send opentelemetry traces to, omit to disable.
     #[doku(example = "http://localhost:4317")]
     pub endpoint: Option<String>,
 }
+
+/**
+Use TelemetrySettings as a member in your own Settings object.
+
+```rust
+use doku::Document;
+use serde::Deserialize;
+
+#[derive(Deserialize, Document)]
+/// Top level Settings
+struct Settings {
+    /// Application Settings
+    pub application: Application,
+    // Telemetry settings.
+    pub telemetry: byre::telemetry::TelemetrySettings,
+}
+
+#[derive(Deserialize, Document)]
+struct Application {
+    // .. your app settings here
+}
+```
+*/
+
+/// Settings for tracing, logging, and metrics.
 #[derive(Default, Serialize, Deserialize, Document)]
 pub struct TelemetrySettings {
+    /// Settings for tracing
     pub trace: TraceSettings,
+    /// Settings for logging
     pub log: LogSettings,
+    /// Settings for metrics
     pub metric: MetricSettings,
 }
 
+/// Telemetry initializes tracing, metrics, and logging.
 pub struct Telemetry {
     meter_provider: Option<SdkMeterProvider>,
     tracer_provider: Option<sdktrace::TracerProvider>,
@@ -62,17 +117,26 @@ pub struct Telemetry {
 impl Drop for Telemetry {
     fn drop(&mut self) {
         if let Some(tracer_provider) = self.tracer_provider.take() {
-            if let Err(err) = tracer_provider.shutdown() {
-                eprintln!("Error shutting down Telemetry tracer provider: {err}");
+            match tracer_provider.shutdown() {
+                Err(err) => {
+                    eprintln!("Error shutting down Telemetry tracer provider: {err}");
+                }
+                _ => (),
             }
         }
         if let Some(meter_provider) = self.meter_provider.take() {
-            if let Err(err) = meter_provider.shutdown() {
-                eprintln!("Error shutting down Telemetry meter provider: {err}");
+            match meter_provider.shutdown() {
+                Err(err) => {
+                    eprintln!("Error shutting down Telemetry meter provider: {err}");
+                }
+                _ => (),
             }
         }
-        if let Err(err) = self.logger_provider.shutdown() {
-            eprintln!("Error shutting down Telemetry logger provider: {err}");
+        match self.logger_provider.shutdown() {
+            Err(err) => {
+                eprintln!("Error shutting down Telemetry logger provider: {err}");
+            }
+            _ => (),
         }
     }
 }
@@ -204,6 +268,10 @@ fn init_logs(
     Ok(logger_provider)
 }
 
+/// Starts the telemetry backend
+///
+/// Uses `service_info` to configure the SERVICE_NAME of the telemetry client.
+/// If you would like to disable sending any of the metrics, tracing, or logging to the OpenTelemetry set the respective endpoint to `None`.
 pub fn init(service_info: &ServiceInfo, settings: &TelemetrySettings) -> Result<Telemetry, Error> {
     let logger_provider =
         init_logs(service_info, &settings.log).with_context(|_| InitLogSnafu {})?;
@@ -226,14 +294,3 @@ pub fn init(service_info: &ServiceInfo, settings: &TelemetrySettings) -> Result<
         logger_provider,
     })
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use crate::init_tracing;
-
-//     #[tokio::test(flavor = "multi_thread")]
-//     async fn test_connection() {
-//         init_tracing().unwrap();
-//         eprintln!("END");
-//     }
-// }

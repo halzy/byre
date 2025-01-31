@@ -1,5 +1,6 @@
+//! Command line argument and config file tools.
+
 use clap::{Arg, ArgAction, Command, Parser};
-use figment::providers::Serialized;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
@@ -8,24 +9,16 @@ use crate::{config::Config, ServiceInfo};
 const GENERATE_CONFIG_OPT_ID: &str = "generate";
 const USE_CONFIG_OPT_ID: &str = "config";
 
-#[derive(Debug, Snafu)]
-pub enum Error {
-    #[snafu(display("Could not load application configuration: {source}"))]
-    FigmentError { source: figment::Error },
-}
-
+/// Default generic argument for `Cli` to be used when you do not need custom CLI arguments.  
 #[derive(clap::Parser, Serialize, Deserialize)]
 pub struct NoArguments {}
 
-// Wish List:
-//  * Easily
-//    * parse a config file
-//    * generate a config file
-//    * override config from environment
-//  * Generating documentation should exit the software
-//  * Escape hatches
+/// Cli is used to parse command line arguments, generate and load config files.
 pub struct Cli<C, A = NoArguments> {
+    /// parsed command line arguments
     pub args: A,
+
+    /// parsed TOML config file with the structure of `C`
     pub config: C,
 }
 
@@ -34,6 +27,7 @@ where
     A: Parser + Serialize + Deserialize<'a>,
     C: Deserialize<'a> + doku::Document,
 {
+    /// Parse command line arguments, generate or load the config file, and apply config overrides from environment variables with `env_prefix`
     pub fn new(service_info: &ServiceInfo, env_prefix: impl AsRef<str>) -> Self {
         // What about the service info? generating config file examples
         let arg_command = A::command();
@@ -90,11 +84,7 @@ where
         };
 
         let env_prefix = env_prefix.as_ref();
-        let config_result = Config::new_with_default_values(
-            Serialized::defaults(&args),
-            Some(config_path_str),
-            Some(env_prefix),
-        );
+        let config_result = Config::new(Some(config_path_str), Some(env_prefix));
 
         let config = match config_result {
             Ok(config) => config.config,
