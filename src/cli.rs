@@ -2,7 +2,6 @@
 
 use clap::{Arg, ArgAction, Command, Parser};
 use serde::{Deserialize, Serialize};
-use snafu::Snafu;
 
 use crate::{config::Config, ServiceInfo};
 
