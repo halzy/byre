@@ -10,6 +10,8 @@ repository = "https://github.com/halzy/byre"
 categories = ["config", "development-tools"]
 keywords = ["service", "telemetry", "settings", "seccomp", "metrics"]
 
+[[example]]
+name = "full"
 
 [features]
 # Enables jemalloc as a memory allocator
@@ -34,3 +36,4 @@ tracing-subscriber = { version = "0.3.19", default-features = false, features = 
 
 [dev-dependencies]
 tokio = { version = "1", features=["macros"] }
+
