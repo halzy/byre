@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2025-02-02
+
+### 🐛 Bug Fixes
+
+- No longer use otel if all endpoints are omitted
+
+### ⚙️ Miscellaneous Tasks
+
+- Updating changelog and Cargo.lock
+- Change version to 0.2.2
+
 ## [0.2.1] - 2025-01-31
 
 ### 🚀 Features
