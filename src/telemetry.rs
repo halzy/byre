@@ -11,6 +11,7 @@ use opentelemetry_sdk::runtime::TokioCurrentThread;
 use opentelemetry_sdk::{trace as sdktrace, Resource};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt as _, Snafu};
+use tracing::Subscriber;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
@@ -112,7 +113,7 @@ pub struct TelemetrySettings {
 pub struct Telemetry {
     meter_provider: Option<SdkMeterProvider>,
     tracer_provider: Option<sdktrace::TracerProvider>,
-    logger_provider: LoggerProvider,
+    logger_provider: Option<LoggerProvider>,
 }
 
 impl Drop for Telemetry {
@@ -125,18 +126,21 @@ impl Drop for Telemetry {
                 _ => (),
             }
         }
-        if let Some(meter_provider) = self.meter_provider.take() {
-            match meter_provider.shutdown() {
+        if let Some(logger_provider) = self.logger_provider.take() {
+            match logger_provider.shutdown() {
                 Err(err) => {
-                    eprintln!("Error shutting down Telemetry meter provider: {err}");
+                    eprintln!("Error shutting down Telemetry logger provider: {err}");
                 }
                 _ => (),
             }
         }
-        match self.logger_provider.shutdown() {
-            Err(err) => {
-                eprintln!("Error shutting down Telemetry logger provider: {err}");
-            }
+        match self.meter_provider.take() {
+            Some(meter_provider) => match meter_provider.shutdown() {
+                Err(err) => {
+                    eprintln!("Error shutting down Telemetry meter provider: {err}");
+                }
+                _ => (),
+            },
             _ => (),
         }
     }
@@ -197,59 +201,74 @@ fn init_metrics(
         None => Ok(None),
     }
 }
-
-fn init_logs(
+fn init_otel_logs<S>(
     service_info: &ServiceInfo,
     settings: &LogSettings,
-) -> Result<opentelemetry_sdk::logs::LoggerProvider, LogError> {
-    let builder = LoggerProvider::builder();
+) -> Result<
+    (
+        Option<opentelemetry_sdk::logs::LoggerProvider>,
+        Option<impl tracing_subscriber::layer::Layer<S> + use<S>>,
+    ),
+    Error,
+>
+where
+    S: Subscriber + for<'span> tracing_subscriber::registry::LookupSpan<'span>,
+{
+    match &settings.endpoint {
+        None => Ok((None, None)),
 
-    let builder = match &settings.endpoint {
         Some(endpoint) => {
+            let builder = LoggerProvider::builder();
+
             let exporter = LogExporter::builder()
                 .with_tonic()
                 .with_endpoint(endpoint)
-                .build()?;
+                .build()
+                .with_context(|_| InitLogSnafu {})?;
 
             let resource = Resource::new(vec![KeyValue::new(
                 opentelemetry_semantic_conventions::resource::SERVICE_NAME,
                 service_info.name_in_metrics.clone(),
             )]);
 
-            builder
+            let builder = builder
                 .with_resource(resource)
-                .with_batch_exporter(exporter, TokioCurrentThread)
+                .with_batch_exporter(exporter, TokioCurrentThread);
+
+            let logger_provider = builder.build();
+
+            // Create a new OpenTelemetryTracingBridge using the above LoggerProvider.
+            let otel_layer = OpenTelemetryTracingBridge::new(&logger_provider);
+
+            // For the OpenTelemetry layer, add a tracing filter to filter events from
+            // OpenTelemetry and its dependent crates (opentelemetry-otlp uses crates
+            // like reqwest/tonic etc.) from being sent back to OTel itself, thus
+            // preventing infinite telemetry generation. The filter levels are set as
+            // follows:
+            // - Allow `info` level and above by default.
+            // - Restrict `opentelemetry`, `hyper`, `tonic`, and `reqwest` completely.
+            // Note: This will also drop events from crates like `tonic` etc. even when
+            // they are used outside the OTLP Exporter. For more details, see:
+            // https://github.com/open-telemetry/opentelemetry-rust/issues/761
+            // FIXME: the directives below should be noted in the documentation!
+            let filter_otel = EnvFilter::new(&settings.otel_level)
+                .add_directive("hyper=off".parse().unwrap())
+                .add_directive("opentelemetry=off".parse().unwrap())
+                .add_directive("tonic=off".parse().unwrap())
+                .add_directive("h2=off".parse().unwrap())
+                .add_directive("reqwest=off".parse().unwrap());
+            let otel_layer = otel_layer.with_filter(filter_otel);
+
+            Ok((Some(logger_provider), Some(otel_layer)))
         }
-        None => builder,
-    };
+    }
+}
 
-    let logger_provider = builder.build();
-
-    let otel_layer = settings.endpoint.as_ref().map(|_| {
-        // Create a new OpenTelemetryTracingBridge using the above LoggerProvider.
-        let otel_layer = OpenTelemetryTracingBridge::new(&logger_provider);
-
-        // For the OpenTelemetry layer, add a tracing filter to filter events from
-        // OpenTelemetry and its dependent crates (opentelemetry-otlp uses crates
-        // like reqwest/tonic etc.) from being sent back to OTel itself, thus
-        // preventing infinite telemetry generation. The filter levels are set as
-        // follows:
-        // - Allow `info` level and above by default.
-        // - Restrict `opentelemetry`, `hyper`, `tonic`, and `reqwest` completely.
-        // Note: This will also drop events from crates like `tonic` etc. even when
-        // they are used outside the OTLP Exporter. For more details, see:
-        // https://github.com/open-telemetry/opentelemetry-rust/issues/761
-        // FIXME: the directives below should be noted in the documentation!
-        let filter_otel = EnvFilter::new(&settings.otel_level)
-            .add_directive("hyper=off".parse().unwrap())
-            .add_directive("opentelemetry=off".parse().unwrap())
-            .add_directive("tonic=off".parse().unwrap())
-            .add_directive("h2=off".parse().unwrap())
-            .add_directive("reqwest=off".parse().unwrap());
-        let otel_layer = otel_layer.with_filter(filter_otel);
-
-        otel_layer
-    });
+fn init_logs(
+    service_info: &ServiceInfo,
+    settings: &LogSettings,
+) -> Result<Option<opentelemetry_sdk::logs::LoggerProvider>, Error> {
+    let (logger_provider, otel_layer) = init_otel_logs(service_info, settings)?;
 
     // Create a new tracing::Fmt layer to print the logs to stdout. It has a
     // default filter of `info` level and above, and `debug` and above for logs
@@ -274,8 +293,7 @@ fn init_logs(
 /// Uses `service_info` to configure the SERVICE_NAME of the telemetry client.
 /// If you would like to disable sending any of the metrics, tracing, or logging to the OpenTelemetry set the respective endpoint to `None`.
 pub fn init(service_info: &ServiceInfo, settings: &TelemetrySettings) -> Result<Telemetry, Error> {
-    let logger_provider =
-        init_logs(service_info, &settings.log).with_context(|_| InitLogSnafu {})?;
+    let logger_provider = init_logs(service_info, &settings.log)?;
 
     let tracer_provider =
         init_traces(service_info, &settings.trace).with_context(|_| InitTraceSnafu {})?;
