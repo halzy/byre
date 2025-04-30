@@ -37,22 +37,21 @@ where
             .about(
                 arg_command
                     .get_about()
-                    .map(ToString::to_string)
-                    .unwrap_or_else(|| service_info.description.to_owned()),
+                    .map_or_else(|| service_info.description.to_owned(), ToString::to_string),
             )
             .args(arg_command.get_arguments())
             .arg(
                 Arg::new("config")
                     .required_unless_present(GENERATE_CONFIG_OPT_ID)
                     .action(ArgAction::Set)
-                    .long("config")
+                    .long(USE_CONFIG_OPT_ID)
                     .short('c')
                     .help("Specifies the toml config file to run the service with"),
             )
             .arg(
                 Arg::new(GENERATE_CONFIG_OPT_ID)
                     .action(ArgAction::Set)
-                    .long("generate")
+                    .long(GENERATE_CONFIG_OPT_ID)
                     .short('g')
                     .help("Generates a new default toml config file for the service"),
             );
@@ -67,9 +66,9 @@ where
             std::process::exit(0);
         }
 
-        let config_path_str = arg_matches
-            .remove_one::<String>(USE_CONFIG_OPT_ID)
-            .expect("clap should have required config");
+        let Some(config_path_str) = arg_matches.remove_one::<String>(USE_CONFIG_OPT_ID) else {
+            unreachable!()
+        };
 
         let res = A::from_arg_matches_mut(&mut arg_matches);
         let args = match res {
@@ -88,7 +87,7 @@ where
         let config = match config_result {
             Ok(config) => config.config,
             Err(err) => {
-                eprintln!("{}", err.to_string());
+                eprintln!("{err}");
                 std::process::exit(1);
             }
         };
