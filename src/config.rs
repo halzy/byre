@@ -1,4 +1,14 @@
-//! Config file tools.
+//! # Configuration File Handling
+//!
+//! This module provides functionality for:
+//!
+//! - Loading configuration from TOML files
+//! - Generating sample configuration files with documentation
+//! - Overriding configuration values with environment variables
+//!
+//! The implementation uses [figment](https://docs.rs/figment) for configuration loading and
+//! [doku](https://docs.rs/doku) for generating documented sample configuration files.
+
 use std::path::{Path, PathBuf};
 
 use figment::{
@@ -10,9 +20,23 @@ use snafu::ResultExt as _;
 
 use crate::{ConfigFileWriteSnafu, Error};
 
-/// Uses Doku to create a config file at the given path
+/// Generates a documented configuration file at the specified path.
 ///
-/// This is usedful if the `Cli` struct cannot be used.
+/// This function uses the [doku](https://docs.rs/doku) library to extract documentation
+/// from a type that implements `doku::Document` and generate a TOML file with
+/// commented examples. This is particularly useful for helping users understand
+/// the available configuration options and their purpose.
+///
+/// This function can be used directly when the `Cli` struct is not appropriate
+/// for your use case.
+///
+/// # Arguments
+///
+/// * `config_path` - Path where the configuration file should be created
+///
+/// # Type Parameters
+///
+/// * `C` - The configuration type that implements `doku::Document`
 ///
 /// # Errors
 /// - `ConfigFileWrite` if the config file cannot be written.
@@ -26,9 +50,23 @@ where
     Ok(())
 }
 
-/// Loads the config file and applies overrides
+/// Container for loaded and merged configuration.
+///
+/// This struct loads configuration from multiple sources and makes it available
+/// through the `config` field. The loading order (from lowest to highest precedence) is:
+///
+/// 1. Default values defined in the configuration struct
+/// 2. Values from the TOML configuration file
+/// 3. Values from environment variables with the specified prefix
+///
+/// Environment variables override configuration using double underscores (`__`) to
+/// represent nesting. For example, `APP__DATABASE__PORT=5432` would override
+/// the `port` field in the `database` section of the configuration.
 pub struct Config<C> {
-    /// an instance of the loaded config file
+    /// The fully loaded and merged configuration instance.
+    ///
+    /// This contains the final configuration after applying all defaults,
+    /// file-based configuration values, and environment variable overrides.
     pub config: C,
 }
 
@@ -36,10 +74,26 @@ impl<'a, C> Config<C>
 where
     C: Deserialize<'a> + doku::Document,
 {
-    /// Loads the config file and overrides
+    /// Creates a new `Config` instance by loading and merging configuration from multiple sources.
+    ///
+    /// This method loads configuration in the following order (from lowest to highest precedence):
+    ///
+    /// 1. Default values defined in the configuration struct
+    /// 2. Values from the TOML configuration file (if provided)
+    /// 3. Values from environment variables with the specified prefix (if provided)
+    ///
+    /// # Arguments
+    ///
+    /// * `config_path` - Optional path to a TOML configuration file
+    /// * `env_prefix` - Optional prefix for environment variables that should override configuration values
+    ///
+    /// # Type Parameters
+    ///
+    /// * `P` - Type that can be converted to a path
+    /// * `E` - Type that can be converted to a string for the environment prefix
     ///
     /// # Errors
-    /// - `ConfigLoad` if the config file cannot be loaded.
+    /// - `ConfigLoad` if the config file cannot be loaded or parsed.
     pub fn new<P, E>(config_path: Option<P>, env_prefix: Option<E>) -> Result<Self, Error>
     where
         P: AsRef<Path>,
