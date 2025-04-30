@@ -1,4 +1,20 @@
-//! Tracing, metrics, logging related tools.
+//! # Telemetry for Rust Applications
+//!
+//! This module provides a complete telemetry solution integrating:
+//!
+//! - **Tracing**: Distributed tracing for tracking request flows across services
+//! - **Metrics**: Quantitative measurements of your application's performance
+//! - **Logging**: Structured event logging for visibility into application behavior
+//!
+//! The implementation uses [OpenTelemetry](https://opentelemetry.io/) standards for compatibility
+//! with popular observability platforms like Jaeger, Prometheus, Grafana, etc.
+//!
+//! ## Why use telemetry?
+//!
+//! - **Troubleshooting**: Quickly identify and debug issues in production
+//! - **Performance optimizations**: Measure and improve application performance
+//! - **Service health monitoring**: Get alerts when services degrade
+//! - **Cross-service visibility**: Track requests across microservices
 
 use doku::Document;
 use opentelemetry::{global, KeyValue};
@@ -42,7 +58,10 @@ pub enum Error {
     },
 }
 
-/// Settings for Metrics
+/// Settings for metrics collection and export.
+///
+/// Metrics provide quantitative measurements about your application's performance and behavior.
+/// Examples include request counts, error rates, response times, and resource usage.
 #[derive(Default, Serialize, Deserialize, Document)]
 pub struct MetricSettings {
     /// gRPC endpoint to send metrics to. Omit to disable opentelemetry metrics.
@@ -50,11 +69,17 @@ pub struct MetricSettings {
     pub endpoint: Option<String>,
 }
 
-/// Settings for Logging
+/// Settings for logging configuration.
+///
+/// Logs provide contextual information about application events and are essential
+/// for debugging and monitoring application behavior.
+///
+/// Note: `otel_level` will filter the logs before they are sent to the console, so if `otel_level` is `warn`, then `console_level` can only be `warn`, `error`, or `off`.
 #[derive(Default, Serialize, Deserialize, Document)]
 pub struct LogSettings {
     /// log level used when filtering console logs. Uses env-logger style syntax. Set to "off" to disable console logging.
-    #[doku(example = "debug,yourcrate=trace")]
+    /// `console_level` is limited by `otel_level`, so if `otel_level` is `warn`, then `console_level` can only be `warn`, `error`, or `off`.   
+    #[doku(example = "debug,yourcrate=info")]
     pub console_level: String,
 
     /// log level used when filtering opentelemetry logs. Uses env-logger style syntax.
@@ -66,7 +91,10 @@ pub struct LogSettings {
     pub endpoint: Option<String>,
 }
 
-/// Settings for opentelemetry traces
+/// Settings for distributed tracing.
+///
+/// Traces track the flow of requests as they propagate through your system, helping you
+/// understand the execution path and identify performance bottlenecks.
 #[derive(Default, Serialize, Deserialize, Document)]
 pub struct TraceSettings {
     /// gRPC endpoint to send opentelemetry traces to, omit to disable.
@@ -79,22 +107,19 @@ Settings for tracing, logging, and metrics.
 
 Use `TelemetrySettings` as a member in your own `Settings` object.
 
+# Example
+
 ```rust
 use doku::Document;
 use serde::Deserialize;
 
 #[derive(Deserialize, Document)]
-/// Top level Settings
-struct Settings {
-    /// Application Settings
-    pub application: Application,
+/// Data Archive Settings
+pub(crate) struct Settings {
+    /// Server Settings
+    pub(crate) application: Application,
     // Telemetry settings.
-    pub telemetry: byre::telemetry::TelemetrySettings,
-}
-
-#[derive(Deserialize, Document)]
-struct Application {
-    // .. your app settings here
+    pub(crate) telemetry: byre::telemetry::TelemetrySettings,
 }
 ``` */
 #[derive(Default, Serialize, Deserialize, Document)]
@@ -107,8 +132,11 @@ pub struct TelemetrySettings {
     pub metric: MetricSettings,
 }
 
-/// Telemetry initializes tracing, metrics, and logging.
-#[derive(Debug)]
+/// Container for the initialized telemetry providers.
+///
+/// This struct owns the telemetry providers and ensures they are properly
+/// shut down when dropped.
+#[derive(Debug, Default)]
 pub struct TelemetryProviders {
     meter: Option<SdkMeterProvider>,
     tracer: Option<sdktrace::SdkTracerProvider>,
@@ -194,6 +222,7 @@ fn init_metrics(
         None => Ok(None),
     }
 }
+
 fn init_otel_logs<S>(
     service_info: &ServiceInfo,
     settings: &LogSettings,
@@ -288,10 +317,10 @@ fn init_logs(
     Ok(logger_provider)
 }
 
-/// Starts the telemetry backend
+/// Initializes the telemetry backend for your application.
 ///
-/// Uses `service_info` to configure the `SERVICE_NAME` of the telemetry client.
-/// If you would like to disable sending any of the metrics, tracing, or logging to the OpenTelemetry set the respective endpoint to `None`.
+/// This function sets up tracing, metrics, and logging according to the provided settings.
+/// It integrates with OpenTelemetry to provide a complete observability solution.
 ///
 /// # Errors
 ///
