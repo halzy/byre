@@ -1,4 +1,15 @@
-//! Command line argument and config file tools.
+//! # Command Line Interface Tools
+//!
+//! This module provides utilities for building command-line applications with:
+//!
+//! - Command-line argument parsing based on `clap`
+//! - TOML configuration file generation and loading
+//! - Environment variable overrides for configuration values
+//!
+//! The design goal is to simplify the common CLI application pattern of:
+//! 1. Parsing command-line arguments
+//! 2. Loading configuration from files
+//! 3. Overriding configuration with environment variables
 
 use clap::{Arg, ArgAction, Command, Parser};
 use serde::{Deserialize, Serialize};
@@ -8,16 +19,39 @@ use crate::{config::Config, ServiceInfo};
 const GENERATE_CONFIG_OPT_ID: &str = "generate";
 const USE_CONFIG_OPT_ID: &str = "config";
 
-/// Default generic argument for `Cli` to be used when you do not need custom CLI arguments.  
+/// An empty arguments structure for use when no custom CLI arguments are needed.
+///
+/// This type implements the `clap::Parser` trait and can be used as the default
+/// argument type for the `Cli` struct when you only need the built-in config file
+/// functionality without additional command-line options.
 #[derive(clap::Parser, Serialize, Deserialize)]
 pub struct NoArguments {}
 
-/// Cli is used to parse command line arguments, generate and load config files.
+/// Main CLI handler that combines command-line arguments, configuration files, and environment variables.
+///
+/// This struct serves as the primary interface for CLI applications, providing:
+///
+/// - Type-safe access to command-line arguments via the `args` field
+/// - Access to the loaded and merged configuration via the `config` field
+/// - Automatic handling of config file generation and loading
+/// - Application of configuration overrides from environment variables
+///
+/// The generic parameters control the behavior:
+/// - `C`: The configuration structure type (must implement `Deserialize` and `doku::Document`)
+/// - `A`: The arguments structure type (defaults to `NoArguments` if custom arguments aren't needed)
 pub struct Cli<C, A = NoArguments> {
-    /// parsed command line arguments
+    /// Parsed command-line arguments from the user.
+    ///
+    /// These are the validated command-line arguments that were passed to the application
+    /// according to the structure defined by type `A`.
     pub args: A,
 
-    /// parsed TOML config file with the structure of `C`
+    /// Application configuration loaded from the TOML config file and environment variables.
+    ///
+    /// This is the fully processed configuration that combines:
+    /// 1. Default values defined in the `C` structure
+    /// 2. Values from the specified configuration file
+    /// 3. Overrides from environment variables (using the prefix specified in `new()`)
     pub config: C,
 }
 
@@ -26,7 +60,28 @@ where
     A: Parser + Serialize + Deserialize<'a>,
     C: Deserialize<'a> + doku::Document,
 {
-    /// Parse command line arguments, generate or load the config file, and apply config overrides from environment variables with `env_prefix`
+    /// Creates a new CLI instance by parsing arguments and loading configuration.
+    ///
+    /// This method:
+    /// 1. Builds a command-line parser with your application info and arguments from type `A`
+    /// 2. Adds the built-in `--config` and `--generate` options
+    /// 3. Parses the command line
+    /// 4. If `--generate` is specified, creates a sample config file and exits
+    /// 5. If `--config` is specified, loads and parses the configuration file
+    /// 6. Applies any environment variable overrides using the specified prefix
+    /// 7. Returns a `Cli` instance with the parsed arguments and configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `service_info` - Service information including name, version, and description
+    /// * `env_prefix` - Prefix for environment variables that override config values
+    ///
+    /// # Panics
+    ///
+    /// This method will call `std::process::exit()` if:
+    /// - A config generation is requested (after generating the file)
+    /// - Command-line argument parsing fails
+    /// - Configuration loading or parsing fails
     pub fn new(service_info: &ServiceInfo, env_prefix: impl AsRef<str>) -> Self {
         // What about the service info? generating config file examples
         let arg_command = A::command();
