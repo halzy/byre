@@ -186,14 +186,14 @@ pub mod telemetry;
 pub enum Error {
     /// Figment could not extract a config from the file with env overrides
     #[snafu(display("Could not load application configuration: {source}"))]
-    ConfigLoadError {
+    ConfigLoad {
         /// The source figment error
-        source: figment::Error,
+        source: Box<figment::Error>,
     },
 
     /// Writing to the config file was not possible
     #[snafu(display("Could not write to the config file at {path:?}: {source}"))]
-    ConfigFileWriteError {
+    ConfigFileWrite {
         /// path where the config file was trying to be written to
         path: std::path::PathBuf,
         /// the IO error that occurred

@@ -63,7 +63,9 @@ where
             None => f,
         };
 
-        let config = f.extract().with_context(|_| super::ConfigLoadSnafu {})?;
+        let config = f.extract().map_err(|err| super::Error::ConfigLoad {
+            source: Box::new(err),
+        })?;
 
         Ok(Self { config })
     }
