@@ -13,6 +13,9 @@ use crate::{ConfigFileWriteSnafu, Error};
 /// Uses Doku to create a config file at the given path
 ///
 /// This is usedful if the `Cli` struct cannot be used.
+///
+/// # Errors
+/// - `ConfigFileWrite` if the config file cannot be written.
 pub fn create_config_file<C>(config_path: impl Into<PathBuf>) -> Result<(), Error>
 where
     C: doku::Document,
@@ -34,6 +37,9 @@ where
     C: Deserialize<'a> + doku::Document,
 {
     /// Loads the config file and overrides
+    ///
+    /// # Errors
+    /// - `ConfigLoad` if the config file cannot be loaded.
     pub fn new<P, E>(config_path: Option<P>, env_prefix: Option<E>) -> Result<Self, Error>
     where
         P: AsRef<Path>,

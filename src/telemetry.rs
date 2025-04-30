@@ -75,7 +75,9 @@ pub struct TraceSettings {
 }
 
 /**
-Use TelemetrySettings as a member in your own Settings object.
+Settings for tracing, logging, and metrics.
+
+Use `TelemetrySettings` as a member in your own `Settings` object.
 
 ```rust
 use doku::Document;
@@ -94,10 +96,7 @@ struct Settings {
 struct Application {
     // .. your app settings here
 }
-```
-*/
-
-/// Settings for tracing, logging, and metrics.
+``` */
 #[derive(Default, Serialize, Deserialize, Document)]
 pub struct TelemetrySettings {
     /// Settings for tracing
@@ -290,7 +289,7 @@ fn init_logs(
 
 /// Starts the telemetry backend
 ///
-/// Uses `service_info` to configure the SERVICE_NAME of the telemetry client.
+/// Uses `service_info` to configure the `SERVICE_NAME` of the telemetry client.
 /// If you would like to disable sending any of the metrics, tracing, or logging to the OpenTelemetry set the respective endpoint to `None`.
 pub fn init(service_info: &ServiceInfo, settings: &TelemetrySettings) -> Result<Telemetry, Error> {
     let logger_provider = init_logs(service_info, &settings.log)?;

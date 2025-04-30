@@ -241,7 +241,7 @@ pub struct ServiceInfo {
 /**
 Creates [`ServiceInfo`] from the information in `Cargo.toml` manifest of the service.
 
-ServiceInfo is used to populate the client name for Telemetry and the CLI help.
+`ServiceInfo` is used to populate the client name for Telemetry and the CLI help.
 ```rust,no_run
 use doku::Document;
 use serde::Deserialize;
