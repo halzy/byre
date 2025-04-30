@@ -1,13 +1,13 @@
 //! Tracing, metrics, logging related tools.
 
 use doku::Document;
-use opentelemetry::trace::TraceError;
 use opentelemetry::{global, KeyValue};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_otlp::{LogExporter, MetricExporter, SpanExporter, WithExportConfig};
-use opentelemetry_sdk::logs::{LogError, LoggerProvider};
-use opentelemetry_sdk::metrics::{MetricError, PeriodicReader, SdkMeterProvider};
-use opentelemetry_sdk::runtime::TokioCurrentThread;
+use opentelemetry_otlp::{
+    ExporterBuildError, LogExporter, MetricExporter, SpanExporter, WithExportConfig,
+};
+use opentelemetry_sdk::logs::SdkLoggerProvider;
+use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::{trace as sdktrace, Resource};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt as _, Snafu};
@@ -22,23 +22,23 @@ use crate::ServiceInfo;
 pub enum Error {
     /// Could not initialize the logger
     #[snafu(display("Could not initialize logging: {source}"))]
-    InitLogError {
+    InitLog {
         /// The error from initializing the gRPC connection
-        source: LogError,
+        source: ExporterBuildError,
     },
 
     /// Could not initialize metrics
     #[snafu(display("Could not initialize metrics: {source}"))]
-    InitMetricError {
+    InitMetric {
         /// The error from initializing the gRPC connection
-        source: MetricError,
+        source: ExporterBuildError,
     },
 
     /// Could not initialize tracing
     #[snafu(display("Could not initialize tracing: {source}"))]
-    InitTraceError {
+    InitTrace {
         /// The error from initializing the gRPC connection
-        source: TraceError,
+        source: ExporterBuildError,
     },
 }
 
@@ -109,38 +109,28 @@ pub struct TelemetrySettings {
 
 /// Telemetry initializes tracing, metrics, and logging.
 #[derive(Debug)]
-pub struct Telemetry {
-    meter_provider: Option<SdkMeterProvider>,
-    tracer_provider: Option<sdktrace::TracerProvider>,
-    logger_provider: Option<LoggerProvider>,
+pub struct TelemetryProviders {
+    meter: Option<SdkMeterProvider>,
+    tracer: Option<sdktrace::SdkTracerProvider>,
+    logger: Option<SdkLoggerProvider>,
 }
 
-impl Drop for Telemetry {
+impl Drop for TelemetryProviders {
     fn drop(&mut self) {
-        if let Some(tracer_provider) = self.tracer_provider.take() {
-            match tracer_provider.shutdown() {
-                Err(err) => {
-                    eprintln!("Error shutting down Telemetry tracer provider: {err}");
-                }
-                _ => (),
+        if let Some(tracer_provider) = self.tracer.take() {
+            if let Err(err) = tracer_provider.shutdown() {
+                eprintln!("Error shutting down Telemetry tracer provider: {err}");
             }
         }
-        if let Some(logger_provider) = self.logger_provider.take() {
-            match logger_provider.shutdown() {
-                Err(err) => {
-                    eprintln!("Error shutting down Telemetry logger provider: {err}");
-                }
-                _ => (),
+        if let Some(logger_provider) = self.logger.take() {
+            if let Err(err) = logger_provider.shutdown() {
+                eprintln!("Error shutting down Telemetry logger provider: {err}");
             }
         }
-        match self.meter_provider.take() {
-            Some(meter_provider) => match meter_provider.shutdown() {
-                Err(err) => {
-                    eprintln!("Error shutting down Telemetry meter provider: {err}");
-                }
-                _ => (),
-            },
-            _ => (),
+        if let Some(meter_provider) = self.meter.take() {
+            if let Err(err) = meter_provider.shutdown() {
+                eprintln!("Error shutting down Telemetry meter provider: {err}");
+            }
         }
     }
 }
@@ -148,7 +138,7 @@ impl Drop for Telemetry {
 fn init_traces(
     service_info: &ServiceInfo,
     settings: &TraceSettings,
-) -> Result<Option<sdktrace::TracerProvider>, TraceError> {
+) -> Result<Option<sdktrace::SdkTracerProvider>, ExporterBuildError> {
     match &settings.endpoint {
         Some(endpoint) => {
             let exporter = SpanExporter::builder()
@@ -156,15 +146,17 @@ fn init_traces(
                 .with_endpoint(endpoint)
                 .build()?;
 
-            let resource = Resource::new(vec![KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                service_info.name_in_metrics.clone(),
-            )]);
+            let resource = Resource::builder()
+                .with_attribute(KeyValue::new(
+                    opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                    service_info.name_in_metrics.clone(),
+                ))
+                .build();
 
             Ok(Some(
-                sdktrace::TracerProvider::builder()
+                sdktrace::SdkTracerProvider::builder()
                     .with_resource(resource)
-                    .with_batch_exporter(exporter, TokioCurrentThread)
+                    .with_batch_exporter(exporter)
                     .build(),
             ))
         }
@@ -175,19 +167,21 @@ fn init_traces(
 fn init_metrics(
     service_info: &ServiceInfo,
     setting: &MetricSettings,
-) -> Result<Option<opentelemetry_sdk::metrics::SdkMeterProvider>, MetricError> {
+) -> Result<Option<opentelemetry_sdk::metrics::SdkMeterProvider>, ExporterBuildError> {
     match &setting.endpoint {
         Some(endpoint) => {
             let exporter = MetricExporter::builder()
                 .with_tonic()
                 .with_endpoint(endpoint)
                 .build()?;
-            let reader = PeriodicReader::builder(exporter, TokioCurrentThread).build();
+            let reader = PeriodicReader::builder(exporter).build();
 
-            let resource = Resource::new(vec![KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                service_info.name_in_metrics.clone(),
-            )]);
+            let resource = Resource::builder()
+                .with_attribute(KeyValue::new(
+                    opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                    service_info.name_in_metrics.clone(),
+                ))
+                .build();
 
             Ok(Some(
                 SdkMeterProvider::builder()
@@ -205,7 +199,7 @@ fn init_otel_logs<S>(
     settings: &LogSettings,
 ) -> Result<
     (
-        Option<opentelemetry_sdk::logs::LoggerProvider>,
+        Option<opentelemetry_sdk::logs::SdkLoggerProvider>,
         Option<impl tracing_subscriber::layer::Layer<S> + use<S>>,
     ),
     Error,
@@ -217,22 +211,7 @@ where
         None => Ok((None, None)),
 
         Some(endpoint) => {
-            let builder = LoggerProvider::builder();
-
-            let exporter = LogExporter::builder()
-                .with_tonic()
-                .with_endpoint(endpoint)
-                .build()
-                .with_context(|_| InitLogSnafu {})?;
-
-            let resource = Resource::new(vec![KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                service_info.name_in_metrics.clone(),
-            )]);
-
-            let builder = builder
-                .with_resource(resource)
-                .with_batch_exporter(exporter, TokioCurrentThread);
+            let builder = init_otel_logs_builder(service_info, endpoint)?;
 
             let logger_provider = builder.build();
 
@@ -263,10 +242,32 @@ where
     }
 }
 
+fn init_otel_logs_builder(
+    service_info: &ServiceInfo,
+    endpoint: &String,
+) -> Result<opentelemetry_sdk::logs::LoggerProviderBuilder, Error> {
+    let builder = SdkLoggerProvider::builder();
+    let exporter = LogExporter::builder()
+        .with_tonic()
+        .with_endpoint(endpoint)
+        .build()
+        .with_context(|_| InitLogSnafu {})?;
+    let resource = Resource::builder()
+        .with_attribute(KeyValue::new(
+            opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+            service_info.name_in_metrics.clone(),
+        ))
+        .build();
+    let builder = builder
+        .with_resource(resource)
+        .with_batch_exporter(exporter);
+    Ok(builder)
+}
+
 fn init_logs(
     service_info: &ServiceInfo,
     settings: &LogSettings,
-) -> Result<Option<opentelemetry_sdk::logs::LoggerProvider>, Error> {
+) -> Result<Option<opentelemetry_sdk::logs::SdkLoggerProvider>, Error> {
     let (logger_provider, otel_layer) = init_otel_logs(service_info, settings)?;
 
     // Create a new tracing::Fmt layer to print the logs to stdout. It has a
@@ -291,7 +292,16 @@ fn init_logs(
 ///
 /// Uses `service_info` to configure the `SERVICE_NAME` of the telemetry client.
 /// If you would like to disable sending any of the metrics, tracing, or logging to the OpenTelemetry set the respective endpoint to `None`.
-pub fn init(service_info: &ServiceInfo, settings: &TelemetrySettings) -> Result<Telemetry, Error> {
+///
+/// # Errors
+///
+/// - `InitLog` if the logger provider cannot be initialized.
+/// - `InitTrace` if the tracer provider cannot be initialized.
+/// - `InitMetric` if the metric provider cannot be initialized.
+pub fn init(
+    service_info: &ServiceInfo,
+    settings: &TelemetrySettings,
+) -> Result<TelemetryProviders, Error> {
     let logger_provider = init_logs(service_info, &settings.log)?;
 
     let tracer_provider =
@@ -306,9 +316,9 @@ pub fn init(service_info: &ServiceInfo, settings: &TelemetrySettings) -> Result<
         global::set_meter_provider(meter_provider.clone());
     }
 
-    Ok(Telemetry {
-        meter_provider,
-        tracer_provider,
-        logger_provider,
+    Ok(TelemetryProviders {
+        meter: meter_provider,
+        tracer: tracer_provider,
+        logger: logger_provider,
     })
 }
