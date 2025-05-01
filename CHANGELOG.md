@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2025-05-01
+
+### 🚜 Refactor
+
+- Clippy - simplify argument handling in CLI by using map_or_else for optional config path
+- Clippy - update documentation
+- Clippy - reduce error size with Box, remove Error variant Error::...Error repetition
+- Enhance telemetry.rs documentation and structure for clarity and consistency
+- Improve documentation and structure of CLI module for better clarity and usability
+- Enhance documentation in config.rs for clarity and usability
+
+### ⚙️ Miscellaneous Tasks
+
+- Updating changelog
+- Update .gitignore and remove Cargo.lock
+- [**breaking**] Update dependencies in Cargo.toml and refactor telemetry.rs for improved error handling and structure
+
 ## [0.2.2] - 2025-02-02
 
 ### 🐛 Bug Fixes
