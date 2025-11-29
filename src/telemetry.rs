@@ -62,7 +62,7 @@ pub enum Error {
 ///
 /// Metrics provide quantitative measurements about your application's performance and behavior.
 /// Examples include request counts, error rates, response times, and resource usage.
-#[derive(Default, Serialize, Deserialize, Document)]
+#[derive(Debug, Default, Serialize, Deserialize, Document)]
 pub struct MetricSettings {
     /// gRPC endpoint to send metrics to. Omit to disable opentelemetry metrics.
     #[doku(example = "http://localhost:4318/v1/metrics")]
@@ -75,10 +75,10 @@ pub struct MetricSettings {
 /// for debugging and monitoring application behavior.
 ///
 /// Note: `otel_level` will filter the logs before they are sent to the console, so if `otel_level` is `warn`, then `console_level` can only be `warn`, `error`, or `off`.
-#[derive(Default, Serialize, Deserialize, Document)]
+#[derive(Debug, Default, Serialize, Deserialize, Document)]
 pub struct LogSettings {
     /// log level used when filtering console logs. Uses env-logger style syntax. Set to "off" to disable console logging.
-    /// `console_level` is limited by `otel_level`, so if `otel_level` is `warn`, then `console_level` can only be `warn`, `error`, or `off`.   
+    /// `console_level` is limited by `otel_level`, so if `otel_level` is `warn`, then `console_level` can only be `warn`, `error`, or `off`.
     #[doku(example = "debug,yourcrate=info")]
     pub console_level: String,
 
@@ -95,7 +95,7 @@ pub struct LogSettings {
 ///
 /// Traces track the flow of requests as they propagate through your system, helping you
 /// understand the execution path and identify performance bottlenecks.
-#[derive(Default, Serialize, Deserialize, Document)]
+#[derive(Debug, Default, Serialize, Deserialize, Document)]
 pub struct TraceSettings {
     /// gRPC endpoint to send opentelemetry traces to, omit to disable.
     #[doku(example = "http://localhost:4317")]
@@ -115,14 +115,22 @@ use serde::Deserialize;
 
 #[derive(Deserialize, Document)]
 /// Data Archive Settings
-pub(crate) struct Settings {
+pub struct Settings {
     /// Server Settings
-    pub(crate) application: Application,
-    // Telemetry settings.
-    pub(crate) telemetry: byre::telemetry::TelemetrySettings,
+    pub application: Application,
+    /// Telemetry settings.
+    pub telemetry: byre::telemetry::TelemetrySettings,
+}
+
+#[derive(Deserialize, Document)]
+pub struct Application {
+    #[doku(example = "localhost")]
+    pub listen_host: String,
+    #[doku(example = "8080")]
+    pub listen_port: u16,
 }
 ``` */
-#[derive(Default, Serialize, Deserialize, Document)]
+#[derive(Debug, Default, Serialize, Deserialize, Document)]
 pub struct TelemetrySettings {
     /// Settings for tracing
     pub trace: TraceSettings,
@@ -135,8 +143,10 @@ pub struct TelemetrySettings {
 /// Container for the initialized telemetry providers.
 ///
 /// This struct owns the telemetry providers and ensures they are properly
-/// shut down when dropped.
+/// shut down when dropped. You must keep this value alive for the duration
+/// of your application; dropping it will shut down all telemetry.
 #[derive(Debug, Default)]
+#[must_use = "dropping TelemetryProviders will shut down all telemetry"]
 pub struct TelemetryProviders {
     meter: Option<SdkMeterProvider>,
     tracer: Option<sdktrace::SdkTracerProvider>,

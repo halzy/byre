@@ -11,14 +11,15 @@ It provides:
 
 ### Tutorial
 
-1. Start by adding the *latest* version of byre, doku, serde, and tokio to your Cargo.toml dependencies. (**NOTE:** check for *latest* versions)
+1. Start by adding byre and its peer dependencies to your Cargo.toml.
 
 ```toml
 [dependencies]
-byre = "0.2"
+byre = "0.3"
 doku = "0.21"
 serde = "1"
 tokio = "1"
+clap = { version = "4", features = ["derive"] }  # Only if defining custom CLI Arguments
 ```
 
 2. Create a Settings struct that will be used to hold your application settings and the telemetry settings.
@@ -54,28 +55,28 @@ pub struct Application {
 
 3. Have `byre` handle the CLI argument parsing, config, and env overrides:
 
-```rust,no_run
+```rust
 # use doku::Document;
 # use serde::Deserialize;
 # #[derive(Document, Deserialize)]
 # pub struct Settings {}
+# fn demo() -> Result<(), Box<dyn std::error::Error>> {
+// Parse command line arguments. Add additional command line option that allows checking
+// the config without running the server.
+let service_info = byre::service_info!();
+let Some(cli) = byre::cli::Cli::<Settings>::try_new(&service_info, "MYAPP_")? else {
+    // Config file was generated, exit successfully
+    return Ok(());
+};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Parse command line arguments. Add additional command line option that allows checking
-    // the config without running the server.
-    let service_info = byre::service_info!();
-    let cli = byre::cli::Cli::<Settings>::new(&service_info, "MYAPP_");
-
-    // ...
-
-    Ok(())
-}
+// ...
+# Ok(())
+# }
 ```
 
 4. Initialize the `byre` telemetry
 
-```rust,no_run
+```rust
 # use doku::Document;
 # use serde::Deserialize;
 # #[derive(Document, Deserialize)]
@@ -83,17 +84,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #     /// Telemetry settings.
 #     pub telemetry: byre::telemetry::TelemetrySettings,
 # }
-# #[tokio::main]
-# async fn main() -> Result<(), Box<dyn std::error::Error>> {
-#     // Parse command line arguments. Add additional command line option that allows checking
-#     // the config without running the server.
-#     let service_info = byre::service_info!();
-    let cli = byre::cli::Cli::<Settings>::new(&service_info, "MYAPP_");
-    let _telemetry = byre::telemetry::init(&service_info, &cli.config.telemetry)?;
-#
-#     // ...
-#
-#     Ok(())
+# fn demo() -> Result<(), Box<dyn std::error::Error>> {
+# let service_info = byre::service_info!();
+# let Some(cli) = byre::cli::Cli::<Settings>::try_new(&service_info, "MYAPP_")? else {
+#     return Ok(());
+# };
+let _telemetry = byre::telemetry::init(&service_info, &cli.config.telemetry)?;
+# Ok(())
 # }
 ```
 
@@ -108,18 +105,19 @@ MYAPP_APPLICATION__LISTEN_PORT=8080 ./test_app --config ./test_app.toml
 
 ### Additional Command line arguments
 
-Create a struct that represents the Arguments you want to check for. `clap` will need to be added to your Cargo.toml dependencies since `clap::Parser` is used.
+Create a struct that represents the Arguments you want to check for. Add `clap` to your dependencies and use `clap::Parser` for the derive macro.
 
 
-```rust,no_run
+```rust
 # use doku::Document;
+# use serde::Deserialize;
 # #[derive(Document, Deserialize)]
 # pub struct Settings {
 #     /// Telemetry settings.
 #     pub telemetry: byre::telemetry::TelemetrySettings,
 # }
 use clap::Parser;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 #[derive(Parser, Deserialize, Serialize)]
 /// A NEW description, not using the one from Cargo.toml!
@@ -129,21 +127,21 @@ pub struct Arguments {
     pub enable_world_peace: bool,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Parse command line arguments. Add additional command line option that allows checking
-    // the config without running the server.
-    let service_info = byre::service_info!();
-    let cli = byre::cli::Cli::<Settings, Arguments>::new(&service_info, "MYAPP_");
-    let _telemetry = byre::telemetry::init(&service_info, &cli.config.telemetry)?;
+# fn demo() -> Result<(), Box<dyn std::error::Error>> {
+// Parse command line arguments. Add additional command line option that allows checking
+// the config without running the server.
+let service_info = byre::service_info!();
+let Some(cli) = byre::cli::Cli::<Settings, Arguments>::try_new(&service_info, "MYAPP_")? else {
+    return Ok(());
+};
+let _telemetry = byre::telemetry::init(&service_info, &cli.config.telemetry)?;
 
-    // Check if world peace has been enabled
-    if cli.args.enable_world_peace {
-        // yay!
-    }
-
-    Ok(())
+// Check if world peace has been enabled
+if cli.args.enable_world_peace {
+    // yay!
 }
+# Ok(())
+# }
 ```
 
 Notice that the description is overridden and there is an option to enable world peace.
@@ -181,34 +179,40 @@ pub mod cli;
 pub mod config;
 pub mod telemetry;
 
-/// Cli initialization related errors
+/// Errors that can occur during byre operations.
+///
+/// This is the main error type for the byre crate. For more specific error handling,
+/// see also:
+/// - [`cli::Error`] for CLI-specific errors
+/// - [`telemetry::Error`] for telemetry initialization errors
 #[derive(Debug, snafu::Snafu)]
+#[non_exhaustive]
 pub enum Error {
-    /// Figment could not extract a config from the file with env overrides
+    /// Figment could not extract a config from the file with env overrides.
     #[snafu(display("Could not load application configuration: {source}"))]
     ConfigLoad {
-        /// The source figment error
+        /// The source figment error.
         source: Box<figment::Error>,
     },
 
-    /// Writing to the config file was not possible
+    /// Writing to the config file was not possible.
     #[snafu(display("Could not write to the config file at {path:?}: {source}"))]
     ConfigFileWrite {
-        /// path where the config file was trying to be written to
+        /// Path where the config file was trying to be written to.
         path: std::path::PathBuf,
-        /// the IO error that occurred
+        /// The IO error that occurred.
         source: std::io::Error,
     },
 }
 
 /// Global memory allocator backed by [jemalloc].
 ///
-/// This static variable is exposed solely for the documentation purposes and don't need to be used
-/// directly. If **jemalloc** feature is enabled then the service will use jemalloc for all the
+/// This static variable is exposed solely for documentation purposes and doesn't need to be used
+/// directly. If the **jemalloc** feature is enabled then the service will use jemalloc for all
 /// memory allocations implicitly.
 ///
-/// If no Foundations API is being used by your project, you will need to explicitly link foundations crate
-/// to your project by adding `extern crate foundations;` to your `main.rs` or `lib.rs`, for jemalloc to
+/// If no byre API is being used by your project, you will need to explicitly link the byre crate
+/// to your project by adding `extern crate byre;` to your `main.rs` or `lib.rs`, for jemalloc to
 /// be embedded in your binary.
 ///
 /// [jemalloc]: https://github.com/jemalloc/jemalloc
@@ -242,40 +246,39 @@ pub struct ServiceInfo {
 Creates [`ServiceInfo`] from the information in `Cargo.toml` manifest of the service.
 
 `ServiceInfo` is used to populate the client name for Telemetry and the CLI help.
-```rust,no_run
+```rust
 use doku::Document;
 use serde::Deserialize;
 
 #[derive(Deserialize, Document)]
 /// Data Archive Settings
-pub(crate) struct Settings {
+pub struct Settings {
     /// Server Settings
-    pub(crate) application: Application,
-    // Telemetry settings.
-    pub(crate) telemetry: byre::telemetry::TelemetrySettings,
+    pub application: Application,
+    /// Telemetry settings.
+    pub telemetry: byre::telemetry::TelemetrySettings,
 }
 
 #[derive(Deserialize, Document)]
-pub(crate) struct Application {
+pub struct Application {
     /// DNS resolve this host and bind to its IP, ie: localhost
     #[doku(example = "localhost")]
-    pub(crate) listen_host: String,
+    pub listen_host: String,
 
     /// port to bind to
     #[doku(example = "8080")]
-    pub(crate) listen_port: u16,
+    pub listen_port: u16,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let service_info = byre::service_info!();
-    let cli = byre::cli::Cli::<Settings>::new(&service_info, "MYAPP_");
-    let _telemetry = byre::telemetry::init(&service_info, &cli.config.telemetry)?;
-
-    // ...
-
-    Ok(())
-}
+# fn demo() -> Result<(), Box<dyn std::error::Error>> {
+let service_info = byre::service_info!();
+let Some(cli) = byre::cli::Cli::<Settings>::try_new(&service_info, "MYAPP_")? else {
+    return Ok(());
+};
+let _telemetry = byre::telemetry::init(&service_info, &cli.config.telemetry)?;
+// ...
+# Ok(())
+# }
 ```
 
 [`ServiceInfo::name_in_metrics`] is the same as the package name, with hyphens (`-`) replaced
