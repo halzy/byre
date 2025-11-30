@@ -32,6 +32,7 @@ tikv-jemallocator = { version = "0.6.1", optional = true, features = [ "profilin
 tokio = { version = "1", features=["macros", "rt-multi-thread"] }
 tonic = { version = "0.14", default-features = false }
 tracing = { version = "0.1.41", default-features = false }
+tracing-opentelemetry = { version = "0.32.0", default-features = false }
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["ansi", "fmt", "env-filter", "std"] }
 
 [dev-dependencies]

@@ -17,6 +17,7 @@
 //! - **Cross-service visibility**: Track requests across microservices
 
 use doku::Document;
+use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::{global, KeyValue};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_otlp::{
@@ -28,6 +29,7 @@ use opentelemetry_sdk::{trace as sdktrace, Resource};
 use serde::{Deserialize, Serialize};
 use snafu::{ResultExt as _, Snafu};
 use tracing::Subscriber;
+use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
@@ -306,8 +308,22 @@ fn init_otel_logs_builder(
 fn init_logs(
     service_info: &ServiceInfo,
     settings: &LogSettings,
+    tracer_provider: Option<&sdktrace::SdkTracerProvider>,
 ) -> Result<Option<opentelemetry_sdk::logs::SdkLoggerProvider>, Error> {
-    let (logger_provider, otel_layer) = init_otel_logs(service_info, settings)?;
+    let (logger_provider, otel_log_layer) = init_otel_logs(service_info, settings)?;
+
+    // Create the OpenTelemetry tracing layer if a tracer provider is configured.
+    // This bridges tracing spans to OpenTelemetry traces.
+    let otel_trace_layer = tracer_provider.map(|provider| {
+        let tracer = provider.tracer(service_info.name_in_metrics.clone());
+        let filter = EnvFilter::new(&settings.otel_level)
+            .add_directive("hyper=off".parse().unwrap())
+            .add_directive("opentelemetry=off".parse().unwrap())
+            .add_directive("tonic=off".parse().unwrap())
+            .add_directive("h2=off".parse().unwrap())
+            .add_directive("reqwest=off".parse().unwrap());
+        OpenTelemetryLayer::new(tracer).with_filter(filter)
+    });
 
     // Create a new tracing::Fmt layer to print the logs to stdout. It has a
     // default filter of `info` level and above, and `debug` and above for logs
@@ -317,10 +333,13 @@ fn init_logs(
         .with_thread_names(true)
         .with_filter(filter_fmt);
 
-    // Initialize the tracing subscriber with the OpenTelemetry layer and the
-    // Fmt layer.
+    // Initialize the tracing subscriber with all layers:
+    // - OpenTelemetry log layer (sends logs to OTel)
+    // - OpenTelemetry trace layer (sends spans to OTel)
+    // - Fmt layer (prints to console)
     tracing_subscriber::registry()
-        .with(otel_layer)
+        .with(otel_log_layer)
+        .with(otel_trace_layer)
         .with(fmt_layer)
         .init();
 
@@ -341,13 +360,15 @@ pub fn init(
     service_info: &ServiceInfo,
     settings: &TelemetrySettings,
 ) -> Result<TelemetryProviders, Error> {
-    let logger_provider = init_logs(service_info, &settings.log)?;
-
+    // Initialize traces first so we can pass the provider to init_logs for the tracing layer
     let tracer_provider =
         init_traces(service_info, &settings.trace).with_context(|_| InitTraceSnafu {})?;
     if let Some(tracer_provider) = &tracer_provider {
         global::set_tracer_provider(tracer_provider.clone());
     }
+
+    // Initialize logs with the tracer provider to enable span export via tracing-opentelemetry
+    let logger_provider = init_logs(service_info, &settings.log, tracer_provider.as_ref())?;
 
     let meter_provider =
         init_metrics(service_info, &settings.metric).with_context(|_| InitMetricSnafu {})?;

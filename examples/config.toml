@@ -1,0 +1,47 @@
+# Example configuration for testing telemetry with Signoz or other OTLP backends
+#
+# Usage:
+#   cargo run --example full -- -c examples/config.toml
+#   cargo run --example full -- -c examples/config.toml -i 0    # run forever
+#   cargo run --example full -- -c examples/config.toml -i 50 -d 500  # 50 iterations, 500ms delay
+
+# App Settings
+[application]
+# Port to listen on
+listen_port = 8080
+
+# Hostname to listen to
+listen_host = "localhost"
+
+# Directory where the application databases are located
+application_db_dir = "/var/db/my_databases"
+
+# Settings for tracing (spans)
+# This sends tracing spans from #[instrument] and info_span! to your OTLP backend
+[telemetry.trace]
+# gRPC endpoint for traces. Common values:
+#   Signoz:     http://localhost:4317
+#   Jaeger:     http://localhost:4317
+#   Grafana:    http://localhost:4317
+endpoint = "http://localhost:4317"
+
+# Settings for logging
+[telemetry.log]
+# Console log level. Uses env-filter syntax: "level" or "crate=level,other_crate=level"
+# Set to "off" to disable console output
+console_level = "info,full=debug"
+
+# OpenTelemetry log level. Logs at this level and above are sent to your OTLP backend.
+# Note: console_level is limited by otel_level
+otel_level = "info,full=debug"
+
+# gRPC endpoint for logs. Remove or comment out to disable log export
+endpoint = "http://localhost:4317"
+
+# Settings for metrics (counters, histograms, gauges)
+[telemetry.metric]
+# HTTP endpoint for metrics. Note: metrics often use HTTP (port 4318), not gRPC (port 4317)
+# Common values:
+#   Signoz:     http://localhost:4318/v1/metrics
+#   Prometheus: http://localhost:4318/v1/metrics
+endpoint = "http://localhost:4318/v1/metrics"
