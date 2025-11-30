@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2025-11-30
+
+### 🐛 Bug Fixes
+
+- Add tracing-opentelemetry layer to export tracing spans to OpenTelemetry traces. Previously, spans from `#[instrument]` and `info_span!` were not being exported to OTLP backends like Signoz.
+
+### 🚀 Features
+
+- Enhanced example app with comprehensive telemetry generation (traces, metrics, logs)
+- Added sample config file for testing with Signoz and other OTLP backends
+
+### ⚙️ Miscellaneous Tasks
+
+- Added tracing-opentelemetry 0.32.0 dependency
+- Updated dependencies
+
 ## [0.3.0] - 2025-05-01
 
 ### 🚜 Refactor
