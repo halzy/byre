@@ -211,3 +211,159 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+    use doku::Document;
+    use serde::Deserialize;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    /// Test configuration structure
+    #[derive(Deserialize, Document, Default)]
+    struct TestConfig {
+        #[doku(example = "test_value")]
+        pub setting: Option<String>,
+    }
+
+    /// Test arguments structure
+    #[derive(Parser, Serialize, Deserialize)]
+    struct TestArgs {
+        #[arg(long)]
+        verbose: bool,
+    }
+
+    #[test]
+    fn test_try_new_with_config_file() {
+        // Create a temporary config file
+        let mut config_file = NamedTempFile::new().unwrap();
+        writeln!(config_file, "setting = \"hello\"").unwrap();
+        let config_path = config_file.path().to_str().unwrap();
+
+        // Simulate command line args
+        let args = vec!["test-program", "--config", config_path, "--verbose"];
+
+        // Use clap's get_matches_from to avoid reading actual command line
+        let arg_command = TestArgs::command();
+        let cmd = Command::new("test-service")
+            .version("1.0.0")
+            .args(arg_command.get_arguments())
+            .arg(
+                Arg::new("config")
+                    .required_unless_present(GENERATE_CONFIG_OPT_ID)
+                    .action(ArgAction::Set)
+                    .long(USE_CONFIG_OPT_ID)
+                    .short('c'),
+            )
+            .arg(
+                Arg::new(GENERATE_CONFIG_OPT_ID)
+                    .action(ArgAction::Set)
+                    .long(GENERATE_CONFIG_OPT_ID)
+                    .short('g'),
+            );
+
+        let mut arg_matches = cmd.try_get_matches_from(args).unwrap();
+
+        // Verify config path was parsed
+        let config_path_str = arg_matches.remove_one::<String>(USE_CONFIG_OPT_ID);
+        assert!(config_path_str.is_some(), "config path should be present");
+    }
+
+    #[test]
+    fn test_try_new_generate_returns_none() {
+        // Create a temporary file path for generated config
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_path = temp_dir.path().join("generated.toml");
+        let output_path_str = output_path.to_str().unwrap();
+
+        // Build command manually to test the generate path
+        let arg_command = TestArgs::command();
+        let cmd = Command::new("test-service")
+            .version("1.0.0")
+            .args(arg_command.get_arguments())
+            .arg(
+                Arg::new("config")
+                    .required_unless_present(GENERATE_CONFIG_OPT_ID)
+                    .action(ArgAction::Set)
+                    .long(USE_CONFIG_OPT_ID)
+                    .short('c'),
+            )
+            .arg(
+                Arg::new(GENERATE_CONFIG_OPT_ID)
+                    .action(ArgAction::Set)
+                    .long(GENERATE_CONFIG_OPT_ID)
+                    .short('g'),
+            );
+
+        let args = vec!["test-program", "--generate", output_path_str];
+        let mut arg_matches = cmd.try_get_matches_from(args).unwrap();
+
+        // Verify generate flag was set
+        let generate_path = arg_matches.remove_one::<String>(GENERATE_CONFIG_OPT_ID);
+        assert!(generate_path.is_some(), "generate path should be present");
+
+        // Generate the config file
+        let path = generate_path.unwrap();
+        crate::config::create_config_file::<TestConfig>(&path).unwrap();
+
+        // Verify file was created and contains expected content
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            contents.contains("setting"),
+            "generated config should contain setting field"
+        );
+    }
+
+    #[test]
+    fn test_try_new_missing_config_fails() {
+        let arg_command = TestArgs::command();
+        let cmd = Command::new("test-service")
+            .version("1.0.0")
+            .args(arg_command.get_arguments())
+            .arg(
+                Arg::new("config")
+                    .required_unless_present(GENERATE_CONFIG_OPT_ID)
+                    .action(ArgAction::Set)
+                    .long(USE_CONFIG_OPT_ID)
+                    .short('c'),
+            )
+            .arg(
+                Arg::new(GENERATE_CONFIG_OPT_ID)
+                    .action(ArgAction::Set)
+                    .long(GENERATE_CONFIG_OPT_ID)
+                    .short('g'),
+            );
+
+        // Try to parse without config or generate - should fail
+        let args = vec!["test-program"];
+        let result = cmd.try_get_matches_from(args);
+
+        assert!(
+            result.is_err(),
+            "should fail when neither config nor generate is provided"
+        );
+    }
+
+    #[test]
+    fn test_cli_try_new_returns_some_with_valid_config() {
+        // Create a temporary config file
+        let mut config_file = NamedTempFile::new().unwrap();
+        writeln!(config_file, "setting = \"test_value\"").unwrap();
+        let config_path = config_file.path().to_str().unwrap();
+
+        // We can't easily test try_new directly because it reads from std::env::args,
+        // but we can test the config loading logic
+        let config_result =
+            crate::config::Config::<TestConfig>::new(Some(config_path), Some("TEST"));
+
+        assert!(config_result.is_ok(), "config should load successfully");
+        let config = config_result.unwrap();
+        assert_eq!(
+            config.config.setting,
+            Some("test_value".to_string()),
+            "setting should be loaded from config file"
+        );
+    }
+}

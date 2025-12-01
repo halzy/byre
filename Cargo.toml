@@ -21,6 +21,7 @@ jemalloc = ["dep:tikv-jemallocator"]
 clap = { version = "4.5", features = ["derive"] }
 doku = "0.21.1"
 figment = { version = "0.10.19", features = ["toml", "env", "test"] }
+http = "1"
 opentelemetry = { version = "0.31.0", default-features = true }
 opentelemetry-appender-tracing = { version = "0.31.1", default-features = true }
 opentelemetry-otlp = { version = "0.31.0", default-features = true , features = ["logs", "metrics", "trace", "grpc-tonic", "reqwest-client"] }
@@ -31,10 +32,12 @@ snafu = { version = "0.8.9", default-features = false, features = ["std", "rust_
 tikv-jemallocator = { version = "0.6.1", optional = true, features = [ "profiling", "stats", "background_threads" ] }
 tokio = { version = "1", features=["macros", "rt-multi-thread"] }
 tonic = { version = "0.14", default-features = false }
+tower = { version = "0.5" }
 tracing = { version = "0.1.41", default-features = false }
 tracing-opentelemetry = { version = "0.32.0", default-features = false }
 tracing-subscriber = { version = "0.3.22", default-features = false, features = ["ansi", "fmt", "env-filter", "std"] }
 
 [dev-dependencies]
+tempfile = "3"
 tokio = { version = "1", features=["macros"] }
 toml = "0.8"
