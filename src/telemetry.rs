@@ -1382,4 +1382,123 @@ mod tests {
             "trace ID should be preserved after set_span_parent"
         );
     }
+
+    // ========================================================================
+    // Tests for init_propagator
+    // ========================================================================
+
+    #[test]
+    fn test_init_propagator_enables_trace_context_propagation() {
+        // Call init_propagator to set the W3C TraceContext propagator
+        init_propagator();
+
+        // Create a context with a known trace ID
+        let trace_id = TraceId::from_hex("1234567890abcdef1234567890abcdef").unwrap();
+        let span_id = SpanId::from_hex("fedcba0987654321").unwrap();
+        let span_context = SpanContext::new(
+            trace_id,
+            span_id,
+            TraceFlags::SAMPLED,
+            false,
+            TraceState::default(),
+        );
+        let cx = opentelemetry::Context::new().with_remote_span_context(span_context);
+
+        // Inject using the propagator
+        let mut headers: HashMap<String, String> = HashMap::new();
+        global::get_text_map_propagator(|propagator| {
+            propagator.inject_context(&cx, &mut headers);
+        });
+
+        // Verify traceparent was injected (this would fail if init_propagator did nothing)
+        assert!(
+            headers.contains_key("traceparent"),
+            "init_propagator should enable traceparent injection"
+        );
+        let traceparent = headers.get("traceparent").unwrap();
+        assert!(
+            traceparent.contains("1234567890abcdef1234567890abcdef"),
+            "traceparent should contain the trace ID"
+        );
+    }
+
+    // ========================================================================
+    // Tests for link_distributed_trace functions
+    // ========================================================================
+
+    #[test]
+    fn test_link_distributed_trace_grpc_extracts_and_uses_context() {
+        init_test_propagator();
+
+        // Create gRPC metadata with a trace context
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert(
+            "traceparent",
+            "00-abcdef1234567890abcdef1234567890-1234567890abcdef-01"
+                .parse()
+                .unwrap(),
+        );
+
+        // Verify that extract_trace_context extracts a valid context
+        let extracted_cx = extract_trace_context(&metadata);
+        let span = extracted_cx.span();
+        let span_context = span.span_context();
+
+        assert!(span_context.is_valid(), "extracted context should be valid");
+        assert_eq!(
+            format!("{:032x}", span_context.trace_id()),
+            "abcdef1234567890abcdef1234567890",
+            "trace ID should match"
+        );
+    }
+
+    #[test]
+    fn test_link_distributed_trace_http_extracts_and_uses_context() {
+        init_test_propagator();
+
+        // Create HTTP headers with a trace context
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            "traceparent",
+            "00-11223344556677889900aabbccddeeff-aabbccddeeff0011-01"
+                .parse()
+                .unwrap(),
+        );
+
+        // Verify that extract_trace_context_http extracts a valid context
+        let extracted_cx = extract_trace_context_http(&headers);
+        let span = extracted_cx.span();
+        let span_context = span.span_context();
+
+        assert!(span_context.is_valid(), "extracted context should be valid");
+        assert_eq!(
+            format!("{:032x}", span_context.trace_id()),
+            "11223344556677889900aabbccddeeff",
+            "trace ID should match"
+        );
+    }
+
+    #[test]
+    fn test_link_distributed_trace_map_extracts_and_uses_context() {
+        init_test_propagator();
+
+        // Create HashMap with a trace context
+        let mut input_headers: HashMap<String, String> = HashMap::new();
+        input_headers.insert(
+            "traceparent".to_string(),
+            "00-ffeeddccbbaa99887766554433221100-0011223344556677-01".to_string(),
+        );
+
+        // Verify that extract_trace_context_map extracts a valid context
+        let extracted_cx = extract_trace_context_map(&input_headers);
+        let span = extracted_cx.span();
+        let span_context = span.span_context();
+
+        assert!(span_context.is_valid(), "extracted context should be valid");
+        assert_eq!(
+            format!("{:032x}", span_context.trace_id()),
+            "ffeeddccbbaa99887766554433221100",
+            "trace ID should match"
+        );
+    }
 }
