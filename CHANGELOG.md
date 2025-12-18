@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2025-12-01
+
+### 🚀 Features
+
+- Added `TraceContextCarrier` trait for unified trace context propagation across gRPC, HTTP, and message queues
+- Added `TraceContextExt` extension trait with `link_distributed_trace()` convenience method
+- Added `prelude` module for convenient imports (`byre::telemetry::prelude::*`)
+
+### 📚 Documentation
+
+- Added Quick Start section to telemetry module docs
+- Added Common Patterns cookbook with runnable examples for gRPC, HTTP, and message queue tracing
+- Converted all doc tests from `ignore` to compilable/runnable examples
+
+### ⚡ Performance
+
+- Optimized `Extractor::keys()` implementations to only check for W3C Trace Context headers (`traceparent`, `tracestate`) instead of iterating all headers
+
 ## [0.4.1] - 2025-11-30
 
 ### 🐛 Bug Fixes
