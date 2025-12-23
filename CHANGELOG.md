@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.0] - 2025-12-22
+
+### 🚀 Features
+
+- Added environment variable expansion in configuration values with `${VAR}` and `$VAR` syntax
+- Added public `expand_env_var()` function for manual environment variable expansion
+- Configuration values can now reference environment variables that are expanded at runtime
+- Supports nested expansion in arrays and dictionaries
+
+### 📚 Documentation
+
+- Added comprehensive examples for environment variable expansion in config module
+
+### ⚡ Performance
+
+- Environment variable expansion uses efficient `EnvExpander` provider integrated with Figment
+
 ## [0.5.0] - 2025-12-01
 
 ### 🚀 Features
